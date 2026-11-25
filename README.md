@@ -13,11 +13,21 @@ Backend API for the [GymNexus frontend](https://github.com/m-talha1021/GymNexus-
 | Method | Route | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/api/health` | No | Health check — `{ ok, service, firebase, time }` |
-| GET | `/api/members` | Yes | List all members (newest first) |
+| GET | `/api/me` | Yes | The caller's profile — `{ uid, email, isOwner }` |
+| GET | `/api/dashboard/stats` | Yes | Dashboard numbers: totals, revenue, recent members, upcoming expiries |
+| GET | `/api/members` | Yes | List the owner's members (newest first) |
 | GET | `/api/members/:id` | Yes | One member |
-| POST | `/api/members` | Yes | Create a member (`fullName`, `email`, `phone`) |
+| POST | `/api/members` | Yes | Create a member (`fullName`, `email`, `phone`, `role`) |
 | PUT | `/api/members/:id` | Yes | Update a member |
 | DELETE | `/api/members/:id` | Yes | Delete a member |
+| GET | `/api/plans` | Yes | List the owner's membership plans |
+| GET | `/api/plans/:id` | Yes | One plan |
+| POST | `/api/plans` | Yes | Create a plan (`name`, `price`, `duration` in months, `description`, `status`) |
+| PUT | `/api/plans/:id` | Yes | Update a plan |
+| PATCH | `/api/plans/:id/status` | Yes | Flip a plan between active and inactive |
+| DELETE | `/api/plans/:id` | Yes | Delete a plan |
+| GET | `/api/payments` | Yes | List the owner's payments (read-only, newest first) |
+| GET | `/api/payments/:id` | Yes | One payment |
 
 Protected routes need a Firebase ID token in the header:
 

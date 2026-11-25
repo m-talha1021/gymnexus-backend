@@ -1,30 +1,24 @@
 const express = require("express");
-const { db, adminReady } = require("../firebase");
+const { FieldValue } = require("firebase-admin/firestore");
+const { db } = require("../firebase");
+const {
+  requireDb,
+  serialise,
+  listOwnerDocs,
+  getOwnerDoc,
+} = require("../utils/firestore");
 
 const router = express.Router();
 const COLLECTION = "members";
 
-function requireDb(res) {
-  if (!adminReady || !db) {
-    res.status(503).json({
-      error:
-        "Backend is not connected to Firebase yet. Set FIREBASE_SERVICE_ACCOUNT in the environment.",
-    });
-    return false;
-  }
-  return true;
-}
+// Mirrors the frontend's Members page (src/pages/Members/Members.jsx).
+// Every document is scoped to the signed-in owner via ownerId.
 
-function serialise(doc) {
-  return { id: doc.id, ...doc.data() };
-}
-
-// GET /api/members — list all members (newest first)
-router.get("/", async (_req, res) => {
+// GET /api/members — list the owner's members (newest first)
+router.get("/", async (req, res) => {
   if (!requireDb(res)) return;
   try {
-    const snapshot = await db.collection(COLLECTION).orderBy("createdAt", "desc").get();
-    return res.json(snapshot.docs.map(serialise));
+    return res.json(await listOwnerDocs(COLLECTION, req.user.uid));
   } catch (error) {
     console.error("List members failed:", error);
     return res.status(500).json({ error: "Could not list members." });
@@ -35,9 +29,14 @@ router.get("/", async (_req, res) => {
 router.get("/:id", async (req, res) => {
   if (!requireDb(res)) return;
   try {
-    const doc = await db.collection(COLLECTION).doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: "Member not found." });
-    return res.json(serialise(doc));
+    const { status, data } = await getOwnerDoc(
+      COLLECTION,
+      req.params.id,
+      req.user.uid
+    );
+    if (status === 404) return res.status(404).json({ error: "Member not found." });
+    if (status === 403) return res.status(403).json({ error: "Not your member." });
+    return res.json(data);
   } catch (error) {
     console.error("Get member failed:", error);
     return res.status(500).json({ error: "Could not load member." });
@@ -47,17 +46,19 @@ router.get("/:id", async (req, res) => {
 // POST /api/members — create a member
 router.post("/", async (req, res) => {
   if (!requireDb(res)) return;
-  const { fullName, email, phone } = req.body || {};
-  if (!fullName || !email) {
+  const { fullName, email, phone, role } = req.body || {};
+  if (!fullName?.trim() || !email?.trim()) {
     return res.status(400).json({ error: "fullName and email are required." });
   }
   try {
     const ref = await db.collection(COLLECTION).add({
-      fullName,
-      email,
-      phone: phone || "",
-      createdAt: new Date().toISOString(),
-      createdBy: req.user ? req.user.uid : null,
+      fullName: fullName.trim(),
+      email: email.trim(),
+      phone: (phone || "").trim(),
+      role: role || "member",
+      ownerId: req.user.uid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
     const doc = await ref.get();
     return res.status(201).json(serialise(doc));
@@ -70,15 +71,19 @@ router.post("/", async (req, res) => {
 // PUT /api/members/:id — update a member
 router.put("/:id", async (req, res) => {
   if (!requireDb(res)) return;
-  const { fullName, email, phone } = req.body || {};
   try {
+    const { status } = await getOwnerDoc(COLLECTION, req.params.id, req.user.uid);
+    if (status === 404) return res.status(404).json({ error: "Member not found." });
+    if (status === 403) return res.status(403).json({ error: "Not your member." });
+
+    const { fullName, email, phone, role } = req.body || {};
+    const updates = { updatedAt: FieldValue.serverTimestamp() };
+    if (fullName !== undefined) updates.fullName = fullName.trim();
+    if (email !== undefined) updates.email = email.trim();
+    if (phone !== undefined) updates.phone = (phone || "").trim();
+    if (role !== undefined) updates.role = role;
+
     const ref = db.collection(COLLECTION).doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: "Member not found." });
-    const updates = {};
-    if (fullName !== undefined) updates.fullName = fullName;
-    if (email !== undefined) updates.email = email;
-    if (phone !== undefined) updates.phone = phone;
     await ref.update(updates);
     const updated = await ref.get();
     return res.json(serialise(updated));
@@ -92,10 +97,10 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   if (!requireDb(res)) return;
   try {
-    const ref = db.collection(COLLECTION).doc(req.params.id);
-    const doc = await ref.get();
-    if (!doc.exists) return res.status(404).json({ error: "Member not found." });
-    await ref.delete();
+    const { status } = await getOwnerDoc(COLLECTION, req.params.id, req.user.uid);
+    if (status === 404) return res.status(404).json({ error: "Member not found." });
+    if (status === 403) return res.status(403).json({ error: "Not your member." });
+    await db.collection(COLLECTION).doc(req.params.id).delete();
     return res.json({ ok: true, id: req.params.id });
   } catch (error) {
     console.error("Delete member failed:", error);

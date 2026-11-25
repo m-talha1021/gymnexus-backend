@@ -6,6 +6,10 @@ const cors = require("cors");
 const { adminReady } = require("../src/firebase");
 const { requireAuth } = require("../src/middleware/auth");
 const membersRouter = require("../src/routes/members");
+const plansRouter = require("../src/routes/plans");
+const paymentsRouter = require("../src/routes/payments");
+const dashboardRouter = require("../src/routes/dashboard");
+const authRouter = require("../src/routes/auth");
 
 const app = express();
 
@@ -22,8 +26,12 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-// Members API — every route requires a signed-in gym owner.
+// API routes — every one requires a signed-in gym owner.
 app.use("/api/members", requireAuth, membersRouter);
+app.use("/api/plans", requireAuth, plansRouter);
+app.use("/api/payments", requireAuth, paymentsRouter);
+app.use("/api/dashboard", requireAuth, dashboardRouter);
+app.use("/api", requireAuth, authRouter);
 
 // 404 for unknown API paths.
 app.use("/api", (_req, res) => {
